@@ -1,34 +1,41 @@
+# =========================
+# IMPORTS
+# =========================
 import os
 import uuid
+import asyncio
 import requests
 from time import time
 
+import yt_dlp
+
 from telegram import (
-    InlineQueryResultArticle,
-    InputTextMessageContent,
+    Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-    Update
+    InlineQueryResultArticle,
+    InputTextMessageContent,
 )
 from telegram.ext import (
     Application,
-    InlineQueryHandler,
     CommandHandler,
-    ContextTypes
+    InlineQueryHandler,
+    CallbackQueryHandler,
+    ContextTypes,
 )
 
 # =========================
 # ENVIRONMENT VARIABLES
 # =========================
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
-OWNER_ID_RAW = os.environ.get("OWNER_ID")
+BOT_TOKEN = os.getenv("BOT_TOKEN")
+YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+OWNER_ID_RAW = os.getenv("OWNER_ID")
 
-# ---- VALIDATION ----
 if not BOT_TOKEN:
-    raise RuntimeError("BOT_TOKEN is missing or empty")
+    raise RuntimeError("BOT_TOKEN is missing")
 
-BOT_TOKEN = BOT_TOKEN.strip()
+if not YOUTUBE_API_KEY:
+    raise RuntimeError("YOUTUBE_API_KEY is missing")
 
 if not OWNER_ID_RAW:
     raise RuntimeError("OWNER_ID is missing")
@@ -36,15 +43,15 @@ if not OWNER_ID_RAW:
 OWNER_ID = int(OWNER_ID_RAW)
 
 # =========================
-# OWNER SETTINGS
+# BOT STATE
 # =========================
 BOT_ENABLED = True
 
 # =========================
-# CACHE (FAST RESPONSES)
+# CACHE
 # =========================
 CACHE = {}
-CACHE_TTL = 300  # seconds (5 minutes)
+CACHE_TTL = 300  # seconds
 
 # =========================
 # LANGUAGE TEXT
@@ -52,20 +59,49 @@ CACHE_TTL = 300  # seconds (5 minutes)
 TEXT = {
     "en": {
         "now_playing": "Now playing",
-        "by": "by"
+        "by": "by",
+        "downloading": "⬇ Downloading… please wait",
     },
     "hi": {
         "now_playing": "अब चल रहा है",
-        "by": "द्वारा"
+        "by": "द्वारा",
+        "downloading": "⬇ डाउनलोड हो रहा है… कृपया प्रतीक्षा करें",
     },
     "es": {
         "now_playing": "Reproduciendo",
-        "by": "por"
-    }
+        "by": "por",
+        "downloading": "⬇ Descargando… espera",
+    },
 }
 
 def t(lang, key):
     return TEXT.get(lang, TEXT["en"]).get(key, TEXT["en"][key])
+
+# =========================
+# AUDIO DOWNLOAD
+# =========================
+def download_song(url: str):
+    os.makedirs("downloads", exist_ok=True)
+
+    ydl_opts = {
+        "format": "bestaudio/best",
+        "outtmpl": "downloads/%(title)s.%(ext)s",
+        "quiet": True,
+        "noplaylist": True,
+        "postprocessors": [
+            {
+                "key": "FFmpegExtractAudio",
+                "preferredcodec": "mp3",
+                "preferredquality": "192",
+            }
+        ],
+    }
+
+    with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        info = ydl.extract_info(url, download=True)
+        filename = ydl.prepare_filename(info)
+        base, _ = os.path.splitext(filename)
+        return base + ".mp3", info
 
 # =========================
 # INLINE SEARCH HANDLER
@@ -97,7 +133,7 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "q": query,
         "type": "video",
         "maxResults": 5,
-        "key": YOUTUBE_API_KEY
+        "key": YOUTUBE_API_KEY,
     }
 
     response = requests.get(url, params=params).json()
@@ -109,13 +145,13 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         channel = item["snippet"]["channelTitle"]
         thumb = item["snippet"]["thumbnails"]["medium"]["url"]
 
-        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
-        yt_music_url = f"https://music.youtube.com/watch?v={video_id}"
+        yt_url = f"https://www.youtube.com/watch?v={video_id}"
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton("▶ Play", url=youtube_url)],
-            [InlineKeyboardButton("🎧 YouTube Music", url=yt_music_url)]
-        ])
+        keyboard = InlineKeyboardMarkup(
+            [
+                [InlineKeyboardButton("⬇ Download & Play", callback_data=f"dl|{video_id}")]
+            ]
+        )
 
         results.append(
             InlineQueryResultArticle(
@@ -127,14 +163,40 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                     f"🎧 *{t(lang,'now_playing')}*\n"
                     f"🎵 *{title}*\n"
                     f"👤 {t(lang,'by')} {channel}",
-                    parse_mode="Markdown"
+                    parse_mode="Markdown",
                 ),
-                reply_markup=keyboard
+                reply_markup=keyboard,
             )
         )
 
     CACHE[query] = (results, now)
     await update.inline_query.answer(results, cache_time=300)
+
+# =========================
+# DOWNLOAD CALLBACK
+# =========================
+async def download_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    query = update.callback_query
+    await query.answer()
+
+    _, video_id = query.data.split("|")
+    yt_url = f"https://www.youtube.com/watch?v={video_id}"
+
+    lang = query.from_user.language_code or "en"
+    await query.edit_message_text(t(lang, "downloading"))
+
+    loop = asyncio.get_running_loop()
+    file_path, info = await loop.run_in_executor(None, download_song, yt_url)
+
+    with open(file_path, "rb") as audio:
+        await query.message.reply_audio(
+            audio=audio,
+            title=info.get("title"),
+            performer=info.get("uploader"),
+            duration=info.get("duration"),
+        )
+
+    os.remove(file_path)
 
 # =========================
 # OWNER COMMANDS
@@ -162,33 +224,28 @@ async def status_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "🎵 *OpsXMusic Bot Help*\n\n"
-        "🔍 *Search music anywhere:*\n"
-        "`@opsxmusicbot song name`\n\n"
-        "▶ *Play* – opens the song on YouTube\n"
-        "🎧 *YouTube Music* – opens in YouTube Music\n\n"
-        "⚡ Fast • Clean • Global inline search\n\n"
-        "ℹ️ Tip: You don’t need to start the bot to use inline search.",
-        parse_mode="Markdown"
+        "🔍 *Inline search anywhere:*\n"
+        "`@Opsxmusicbot song name`\n\n"
+        "⬇ Download & play audio directly in Telegram\n\n"
+        "⚡ Fast • Cached • Multilingual",
+        parse_mode="Markdown",
     )
 
 # =========================
 # MAIN
 # =========================
 def main():
-    if not BOT_TOKEN:
-        raise RuntimeError("BOT_TOKEN is missing or empty")
-
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(InlineQueryHandler(inline_search))
+    app.add_handler(CallbackQueryHandler(download_callback))
     app.add_handler(CommandHandler("help", help_command))
-    app.add_handler(CommandHandler("stop", stop_bot))
     app.add_handler(CommandHandler("start", start_bot))
+    app.add_handler(CommandHandler("stop", stop_bot))
     app.add_handler(CommandHandler("status", status_bot))
 
-    print("🤖 OpsXMusic bot running (Railway-ready)")
+    print("🤖 OpsXMusic bot running")
     app.run_polling()
-
 
 if __name__ == "__main__":
     main()

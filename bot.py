@@ -1,13 +1,14 @@
 import os
 import uuid
 import requests
+import time
 
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQueryResultArticle,
     InputTextMessageContent,
-    update
+    Update
 )
 from telegram.ext import (
     Application,
@@ -21,7 +22,7 @@ from telegram.ext import (
 # =====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN")
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
-OWNER_ID_RAW = os.eviron.get("OWNER_ID")
+OWNER_ID_RAW = os.environ.get("OWNER_ID")
 
 # ---- VALIDATION ----
 if not BOT_TOKEN:
@@ -112,28 +113,30 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         yt_music_url = f"https://music.youtube.com/watch?v={video_id}"
 
         keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("▶ Play", url=youtube_url)],
-                [InlineKeyboardButton("🎧 YouTube Music", url=yt_music_url)]
-            ])
+            [InlineKeyboardButton("▶ Play", url=youtube_url)],
+            [InlineKeyboardButton("🎧 YouTube Music", url=yt_music_url)]
+        ])
 
-            results.append(
-                InlineQueryResultArticle(
-                    id=str(uuid.uuid4()),
-                    title=f"🎵 {title}",
-                    description=f"👤 {channel}",
-                    thumbnail_url=thumb,
-                    input_message_content=InputTextMessageContent(
-                        f"🎧 *{t(lang,'now_playing')}*\n"
-                        f"🎵 *{title}*\n"
-                        f"👤 {t(lang,'by')} {channel}",
-                        parse_mode="Markdown"
-                    ),
-                    reply_markup=keyboard
-                )
+        # This was indented too far; it is now aligned with 'keyboard'
+        results.append(
+            InlineQueryResultArticle(
+                id=str(uuid.uuid4()),
+                title=f"🎵 {title}",
+                description=f"👤 {channel}",
+                thumbnail_url=thumb,
+                input_message_content=InputTextMessageContent(
+                    f"🎧 *{t(lang,'now_playing')}*\n"
+                    f"🎵 *{title}*\n"
+                    f"👤 {t(lang,'by')} {channel}",
+                    parse_mode="Markdown"
+                ),
+                reply_markup=keyboard
             )
+        )
 
-        CACHE[query] = (results, now)
-        await update.inline_query.answer(results, cache_time=300)
+    # These must be outside the 'for' loop to send all results at once
+    CACHE[query] = (results, now)
+    await update.inline_query.answer(results, cache_time=300)
 
 # ====================
 # OWNER COMMANDS

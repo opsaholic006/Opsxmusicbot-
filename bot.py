@@ -1,202 +1,192 @@
 import os
 import uuid
-import asyncio
-import urllib.parse
 import requests
-import yt_dlp
-import logging
 
 from telegram import (
-    Update,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
     InlineQueryResultArticle,
     InputTextMessageContent,
+    update
 )
 from telegram.ext import (
     Application,
     CommandHandler,
     InlineQueryHandler,
-    CallbackQueryHandler,
-    ContextTypes,
+    ContextTypes
 )
 
-# Enable Logging
-logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
-logger = logging.getLogger(__name__)
-
 # =====================
-# ENVIRONMENT
+# ENVIRONMENT VARIABLES
 # =====================
-BOT_TOKEN = os.getenv("BOT_TOKEN")
-YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
+OWNER_ID_RAW = os.eviron.get("OWNER_ID")
 
-if not BOT_TOKEN or not YOUTUBE_API_KEY:
-    raise RuntimeError("Missing BOT_TOKEN or YOUTUBE_API_KEY in Environment Variables")
+# ---- VALIDATION ----
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN is missing or empty")
 
-# Local cache for the session (Note: Clears on restart)
-AUDIO_CACHE: dict[str, str] = {}
+BOT_TOKEN = BOT_TOKEN.strip()
 
-# =====================
-# YT-DLP CONFIG
-# =====================
-YDL_OPTS = {
-    "format": "bestaudio/best",
-    "quiet": True,
-    "noplaylist": True,
-    "outtmpl": "downloads/%(id)s.%(ext)s",
-    "postprocessors": [{
-        "key": "FFmpegExtractAudio",
-        "preferredcodec": "mp3",
-        "preferredquality": "192",
-    }],
+if not OWNER_ID_RAW:
+    raise RuntimeError("OWNER_ID is missing")
+
+OWNER_ID = int(OWNER_ID_RAW)
+
+# ============================
+# OWNER SETTINGS
+# ============================
+BOT_ENABLED = True
+
+# =========================
+# CACHE (FAST RESPONSES)
+# =========================
+CACHE = {}
+CACHE_TTL = 300  # seconds (5 minutes)
+
+# =========================
+# LANGUAGE TEXT
+# =========================
+TEXT = {
+    "en": {
+        "now_playing": "Now playing",
+        "by": "by"
+    },
+    "hi": {
+        "now_playing": "अब चल रहा है",
+        "by": "द्वारा"
+    },
+    "es": {
+        "now_playing": "Reproduciendo",
+        "by": "por"
+    }
 }
 
-# =====================
-# HELPER FUNCTIONS
-# =====================
-def download_song(video_id: str):
-    if not os.path.exists("downloads"):
-        os.makedirs("downloads")
-    
-    url = f"https://www.youtube.com/watch?v={video_id}"
-    with yt_dlp.YoutubeDL(YDL_OPTS) as ydl:
-        info = ydl.extract_info(url, download=True)
-        # yt-dlp might change extension to .mp3 due to postprocessor
-        expected_file = os.path.join("downloads", f"{video_id}.mp3")
-        return expected_file, info
+def t(lang, key):
+    return TEXT.get(lang, TEXT["en"]).get(key, TEXT["en"][key])
 
-def yt_search(query: str):
-    api_url = "https://www.googleapis.com/youtube/v3/search"
-    params = {
-        "part": "snippet",
-        "q": query,
-        "type": "video",
-        "maxResults": 6,
-        "key": YOUTUBE_API_KEY,
-    }
-    response = requests.get(api_url, params=params, timeout=10)
-    return response.json()
-
-# =====================
-# HANDLERS
-# =====================
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "🎧 *OpsXMusic Bot*\n\nSearch for music directly in any chat!\n"
-        "Type `@your_bot_username song name`",
-        parse_mode="Markdown",
-    )
-
+# =========================
+# INLINE SEARCH HANDLER
+# =========================
 async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global BOT_ENABLED
+
+    if not BOT_ENABLED:
+        return
+
     query = update.inline_query.query.strip()
     if not query:
         return
 
-    try:
-        loop = asyncio.get_running_loop()
-        data = await loop.run_in_executor(None, yt_search, query)
-        results = []
+    lang = update.inline_query.from_user.language_code or "en"
+    now = time()
 
-        for item in data.get("items", []):
-            if "id" not in item or "videoId" not in item["id"]:
-                continue
-                
-            video_id = item["id"]["videoId"]
-            title = item["snippet"]["title"]
-            channel = item["snippet"]["channelTitle"]
-            thumb = item["snippet"]["thumbnails"]["medium"]["url"]
+    # ---- CACHE CHECK ----
+    if query in CACHE:
+        cached_results, ts = CACHE[query]
+        if now - ts < CACHE_TTL:
+            await update.inline_query.answer(cached_results, cache_time=300)
+            return
 
-            keyboard = InlineKeyboardMarkup([
-                [InlineKeyboardButton("⬇️ Download & Play", callback_data=f"play|{video_id}")]
+    # ---- YOUTUBE SEARCH ----
+    url = "https://www.googleapis.com/youtube/v3/search"
+    params = {
+        "part": "snippet",
+        "q": query,
+        "type": "video",
+        "maxResults": 5,
+        "key": YOUTUBE_API_KEY
+    }
+
+    response = requests.get(url, params=params).json()
+    results = []
+
+    for item in response.get("items", []):
+        video_id = item["id"]["videoId"]
+        title = item["snippet"]["title"]
+        channel = item["snippet"]["channelTitle"]
+        thumb = item["snippet"]["thumbnails"]["medium"]["url"]
+
+        youtube_url = f"https://www.youtube.com/watch?v={video_id}"
+        yt_music_url = f"https://music.youtube.com/watch?v={video_id}"
+
+        keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton("▶ Play", url=youtube_url)],
+                [InlineKeyboardButton("🎧 YouTube Music", url=yt_music_url)]
             ])
 
             results.append(
                 InlineQueryResultArticle(
                     id=str(uuid.uuid4()),
-                    title=title,
-                    description=channel,
-                    thumb_url=thumb,
+                    title=f"🎵 {title}",
+                    description=f"👤 {channel}",
+                    thumbnail_url=thumb,
                     input_message_content=InputTextMessageContent(
-                        f"🎵 *{title}*\n👤 {channel}",
-                        parse_mode="Markdown",
+                        f"🎧 *{t(lang,'now_playing')}*\n"
+                        f"🎵 *{title}*\n"
+                        f"👤 {t(lang,'by')} {channel}",
+                        parse_mode="Markdown"
                     ),
-                    reply_markup=keyboard,
+                    reply_markup=keyboard
                 )
             )
-        await update.inline_query.answer(results, cache_time=15)
-    except Exception as e:
-        logger.error(f"Inline Search Error: {e}")
 
-async def play_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
+        CACHE[query] = (results, now)
+        await update.inline_query.answer(results, cache_time=300)
 
-    video_id = query.data.split("|", 1)[1]
-    yt_link = f"https://www.youtube.com/watch?v={video_id}"
-    
-    # 1. Check Cache
-    if video_id in AUDIO_CACHE:
-        try:
-            await query.message.reply_audio(
-                audio=AUDIO_CACHE[video_id],
-                caption=f"✅ Resent from cache\n▶️ [Watch on YouTube]({yt_link})",
-                parse_mode="Markdown"
-            )
-            return
-        except Exception:
-            # If cache fails (e.g. file_id expired), proceed to re-download
-            pass
+# ====================
+# OWNER COMMANDS
+# ====================
+async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global BOT_ENABLED
+    if update.effective_user.id != OWNER_ID:
+        return
+    BOT_ENABLED = False
+    await update.message.reply_text("⛔ OpsXMusic stopped.")
 
-    status_msg = await query.edit_message_text("📥 Downloading and converting... please wait.")
+async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global BOT_ENABLED
+    if update.effective_user.id != OWNER_ID:
+        return
+    BOT_ENABLED = True
+    await update.message.reply_text("✅ OpsXMusic started.")
 
-    # 2. Download
-    file_path = None
-    try:
-        loop = asyncio.get_running_loop()
-        file_path, info = await loop.run_in_executor(None, download_song, video_id)
-        
-        title = info.get("title", "Unknown Track")
-        performer = info.get("uploader", "Unknown Artist")
+async def status_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id != OWNER_ID:
+        return
+    status = "ON ✅" if BOT_ENABLED else "OFF ⛔"
+    await update.message.reply_text(f"🤖 Bot status: {status}")
 
-        # 3. Upload to Telegram
-        with open(file_path, "rb") as audio_file:
-            sent = await query.message.reply_audio(
-                audio=audio_file,
-                title=title,
-                performer=performer,
-                caption=f"🎵 *{title}*\n👤 {performer}\n\n▶️ [YouTube]({yt_link})",
-                parse_mode="Markdown"
-            )
-            
-        # 4. Save to Cache and Delete File
-        AUDIO_CACHE[video_id] = sent.audio.file_id
-        await status_msg.delete()
-
-    except Exception as e:
-        logger.error(f"Playback Error: {e}")
-        await query.edit_message_text(f"❌ Failed to process audio.\nError: `{str(e)}`", parse_mode="Markdown")
-    
-    finally:
-        # 5. Cleanup local storage
-        if file_path and os.path.exists(file_path):
-            os.remove(file_path)
+async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    await update.message.reply_text(
+        "🎵 *OpsXMusic Bot Help*\n\n"
+        "🔍 *Search music anywhere:*\n"
+        "`@opsxmusicbot song name` \n\n"
+        "▶ *Play* - opens the song on YouTube\n"
+        "🎧 *YouTube Music* - opens in YouTube Music\n\n"
+        "⚡ Fast • Clean • Global inline search\n\n"
+        "ℹ️ Tip: You don't need to start the bot to use inline search.",
+        parse_mode="Markdown"
+    )
 
 # =====================
 # MAIN
 # =====================
 def main():
-    # Create the app
-    application = Application.builder().token(BOT_TOKEN).build()
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN is missing or empty")
 
-    # Add Handlers
-    application.add_handler(CommandHandler("start", start))
-    application.add_handler(InlineQueryHandler(inline_search))
-    application.add_handler(CallbackQueryHandler(play_callback))
+    app = Application.builder().token(BOT_TOKEN).build()
 
-    # Start the Bot
-    print("🤖 Bot is live on Railway!")
-    application.run_polling(drop_pending_updates=True)
+    app.add_handler(InlineQueryHandler(inline_search))
+    app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("stop", stop_bot))
+    app.add_handler(CommandHandler("start", start_bot))
+    app.add_handler(CommandHandler("status", status_bot))
+
+    print("🤖 OpsXMusic bot running (Railway-ready)")
+    app.run_polling()
 
 if __name__ == "__main__":
     main()

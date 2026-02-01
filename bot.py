@@ -175,6 +175,9 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # MAIN
 # =========================
 def main():
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN is missing or empty")
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     app.add_handler(InlineQueryHandler(inline_search))
@@ -185,6 +188,7 @@ def main():
 
     print("🤖 OpsXMusic bot running (Railway-ready)")
     app.run_polling()
+
 
 if __name__ == "__main__":
     main()

@@ -20,13 +20,24 @@ from telegram.ext import (
 # =========================
 # ENVIRONMENT VARIABLES
 # =========================
-BOT_TOKEN = os.environ.get("8330183807:AAH_5ymF6KpVr0poFXxFds8I3a7xeNyDMeI")
-YOUTUBE_API_KEY = os.environ.get("AIzaSyAwYDlt3BKYAxmeB2S9qoaWdJuOcAaAy2Q")
+BOT_TOKEN = os.environ.get("BOT_TOKEN")
+YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
+OWNER_ID_RAW = os.environ.get("OWNER_ID")
+
+# ---- VALIDATION ----
+if not BOT_TOKEN:
+    raise RuntimeError("BOT_TOKEN is missing or empty")
+
+BOT_TOKEN = BOT_TOKEN.strip()
+
+if not OWNER_ID_RAW:
+    raise RuntimeError("OWNER_ID is missing")
+
+OWNER_ID = int(OWNER_ID_RAW)
 
 # =========================
 # OWNER SETTINGS
 # =========================
-OWNER_ID = 7359097163  # <-- REPLACE with your Telegram numeric user ID
 BOT_ENABLED = True
 
 # =========================

@@ -105,41 +105,40 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async with session.get(url, params=params, timeout=5) as resp:
             data = await resp.json()
 
-for item in data.get("items", []):
-    video_id = item["id"]["videoId"]
-    title = item["snippet"]["title"]
-    channel = item["snippet"]["channelTitle"]
-    thumb = item["snippet"]["thumbnails"]["medium"]["url"]
+        for item in data.get("items", []):
+            video_id = item["id"]["videoId"]
+            title = item["snippet"]["title"]
+            channel = item["snippet"]["channelTitle"]
+            thumb = item["snippet"]["thumbnails"]["medium"]["url"]
 
-    yt = f"https://www.youtube.com/watch?v={video_id}"
-    ytm = f"https://music.youtube.com/watch?v={video_id}"
-    sp = f"https://open.spotify.com/search/{title}"
+            yt = f"https://www.youtube.com/watch?v={video_id}"
+            ytm = f"https://music.youtube.com/watch?v={video_id}"
 
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton(fraktur("▶ 𝔓𝔩𝔞𝔶 𝔬𝔫 𝔜𝔬𝔲𝔗𝔲𝔟𝔢"), url=yt)],
-        [InlineKeyboardButton(fraktur("🎧 𝔜𝔬𝔲𝔗𝔲𝔟𝔢 𝔐𝔲𝔰𝔦𝔠"), url=ytm)],
-        [InlineKeyboardButton(fraktur("🟢 𝔖𝔭𝔬𝔱𝔦𝔣𝔶"), url=sp)],
-    ])
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(fraktur("▶ 𝔓𝔩𝔞𝔶 𝔬𝔫 𝔜𝔬𝔲𝔗𝔲𝔟𝔢"), url=yt)],
+                [InlineKeyboardButton(fraktur("🎧 𝔜𝔬𝔘𝔗𝔲𝔅𝔢 𝔐𝔲𝔰𝔦𝔠"), url=ytm)],
+            ])
 
-    results.append(
-        InlineQueryResultArticle(
-            id=str(uuid.uuid4()),
-            title=fraktur(f"🎼 {title}"),
-            description=fraktur(f"🙍🏻‍♀️ {channel}"),
-            thumbnail_url=thumb,
-            input_message_content=InputTextMessageContent(
-                fraktur(
-                    f"🎧 𝔑𝔬𝔴 𝔭𝔩𝔞𝔶\n"
-                    f"🎼 {title}\n"
-                    f"🙍🏻‍♀️ {t(lang,'by')} {channel}"
+            results.append(
+                InlineQueryResultArticle(
+                    id=str(uuid.uuid4()),
+                    title=fraktur(f"🎼 {title}"),
+                    description=fraktur(f"🙍🏻‍♀️ {channel}"),
+                    thumbnail_url=thumb,
+                    input_message_content=InputTextMessageContent(
+                        fraktur(
+                            f"🎧 𝔑𝔬𝔴 𝔭𝔩𝔞𝔶\n"
+                            f"🎼 {title}\n"
+                            f"🙍🏻‍♀️ {t(lang,'by')} {channel}"
+                        ),
+                        parse_mode="Markdown",
+                    ),
+                    reply_markup=keyboard,
                 )
-            ),
-            reply_markup=keyboard,
-        )
-    )
+            )
 
-CACHE[query] = (results, now)
-await update.inline_query.answer(results, cache_time=300)
+    CACHE[query] = (results, now)
+    await update.inline_query.answer(results, cache_time=300)
 
 # =====================
 # OWNER COMMANDS
@@ -151,7 +150,6 @@ async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     BOT_ENABLED = False
     await update.message.reply_text("⛔ Opsxmusic stopped")
 
-
 async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global BOT_ENABLED
     if update.effective_user.id != OWNER_ID:
@@ -159,14 +157,11 @@ async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     BOT_ENABLED = True
     await update.message.reply_text("✅ Opsxmusic started")
 
-
 async def status_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_user.id != OWNER_ID:
         return
-
     status = "Running ✅" if BOT_ENABLED else "OFFLINE 📵"
     await update.message.reply_text(f"🎚️ Opsxmusic Status: {status}")
-
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
@@ -174,8 +169,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "*Search music anywhere:*\n"
         "`@opsxmusicbot song name`\n\n"
         "▶ *Play* → YouTube\n"
-        "🎧 *YouTube Music*\n"
-        "🟢 *Spotify*\n\n"
+        "🎧 *YouTube Music*\n\n"
         "⚡ Fast • Clean • Global inline search\n\n"
         "💡 Tip: You don’t need /start to use inline search.",
         parse_mode="Markdown"
@@ -191,6 +185,7 @@ def main():
     app.add_handler(CommandHandler("start", start_bot))
     app.add_handler(CommandHandler("stop", stop_bot))
     app.add_handler(CommandHandler("status", status_bot))
+    app.add_handler(CommandHandler("help", help_command))
 
     print("🤖 OpsXMusic running")
     app.run_polling()

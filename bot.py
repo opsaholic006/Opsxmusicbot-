@@ -105,41 +105,41 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         async with session.get(url, params=params, timeout=5) as resp:
             data = await resp.json()
 
-    for item in data.get("items", []):
-        video_id = item["id"]["videoId"]
-        title = item["snippet"]["title"]
-        channel = item["snippet"]["channelTitle"]
-        thumb = item["snippet"]["thumbnails"]["medium"]["url"]
+for item in data.get("items", []):
+    video_id = item["id"]["videoId"]
+    title = item["snippet"]["title"]
+    channel = item["snippet"]["channelTitle"]
+    thumb = item["snippet"]["thumbnails"]["medium"]["url"]
 
-        yt = f"https://www.youtube.com/watch?v={video_id}"
-        ytm = f"https://music.youtube.com/watch?v={video_id}"
-        sp = f"https://open.spotify.com/search/{title}"
+    yt = f"https://www.youtube.com/watch?v={video_id}"
+    ytm = f"https://music.youtube.com/watch?v={video_id}"
+    sp = f"https://open.spotify.com/search/{title}"
 
-        keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(fraktur("▶Play on YouTube"), url=yt)],
-            [InlineKeyboardButton(fraktur("🎧 YouTube Music"), url=ytm)],
-            [InlineKeyboardButton("🟢 Spotify", url=sp)],
-        ])
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton(fraktur("▶ 𝔓𝔩𝔞𝔶 𝔬𝔫 𝔜𝔬𝔲𝔗𝔲𝔟𝔢"), url=yt)],
+        [InlineKeyboardButton(fraktur("🎧 𝔜𝔬𝔲𝔗𝔲𝔟𝔢 𝔐𝔲𝔰𝔦𝔠"), url=ytm)],
+        [InlineKeyboardButton(fraktur("🟢 𝔖𝔭𝔬𝔱𝔦𝔣𝔶"), url=sp)],
+    ])
 
-        results.append(
-            InlineQueryResultArticle(
-                id=str(uuid.uuid4()),
-                title=fraktur"🎼 {title}",
-                description=fraktur"🙍🏻‍♀️ {channel}",
-                thumbnail_url=thumb,
-                input_message_content=InputTextMessageContent(
-                     fraktur(
-                    f"🎧 *{t(lang,'now_playing')}*\n"
-                    f"🎼 *{title}*\n"
-                    f"🙍🏻‍♀️ {t(lang,'by')} {channel}",
-                    parse_mode="Markdown",
-                ),
-                reply_markup=keyboard,
-            )
+    results.append(
+        InlineQueryResultArticle(
+            id=str(uuid.uuid4()),
+            title=fraktur(f"🎼 {title}"),
+            description=fraktur(f"🙍🏻‍♀️ {channel}"),
+            thumbnail_url=thumb,
+            input_message_content=InputTextMessageContent(
+                fraktur(
+                    f"🎧 𝔑𝔬𝔴 𝔭𝔩𝔞𝔶\n"
+                    f"🎼 {title}\n"
+                    f"🙍🏻‍♀️ {t(lang,'by')} {channel}"
+                )
+            ),
+            reply_markup=keyboard,
         )
+    )
 
-    CACHE[query] = (results, now)
-    await update.inline_query.answer(results, cache_time=300)
+CACHE[query] = (results, now)
+await update.inline_query.answer(results, cache_time=300)
 
 # =====================
 # OWNER COMMANDS

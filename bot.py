@@ -17,24 +17,8 @@ from telegram.ext import (
     ContextTypes
 )
 
-# =====================
-# FRAKTUR FONT SYSTEM
-# =====================
-FRAKTUR = {
-    "A":"𝔄","B":"𝔅","C":"ℭ","D":"𝔇","E":"𝔈","F":"𝔉","G":"𝔊",
-    "H":"ℌ","I":"ℑ","J":"𝔍","K":"𝔎","L":"𝔏","M":"𝔐","N":"𝔑",
-    "O":"𝔒","P":"𝔓","Q":"𝔔","R":"ℜ","S":"𝔖","T":"𝔗","U":"𝔘",
-    "V":"𝔙","W":"𝔚","X":"𝔛","Y":"𝔜","Z":"ℨ",
-    "a":"𝔞","b":"𝔟","c":"𝔠","d":"𝔡","e":"𝔢","f":"𝔣","g":"𝔤",
-    "h":"𝔥","i":"𝔦","j":"𝔧","k":"𝔨","l":"𝔩","m":"𝔪","n":"𝔫",
-    "o":"𝔬","p":"𝔭","q":"𝔮","r":"𝔯","s":"𝔰","t":"𝔱","u":"𝔲",
-    "v":"𝔳","w":"𝔴","x":"𝔵","y":"𝔶","z":"𝔷",
-    "0":"𝟘","1":"𝟙","2":"𝟚","3":"𝟛","4":"𝟜",
-    "5":"𝟝","6":"𝟞","7":"𝟟","8":"𝟠","9":"𝟡"
-}
-
-def fraktur(text: str) -> str:
-    return "".join(FRAKTUR.get(c, c) for c in text)
+# --- FONT CHANGE: Use pyfiglet instead of a custom dictionary ---
+import pyfiglet
 
 # =====================
 # ENVIRONMENT VARIABLES
@@ -46,10 +30,11 @@ OWNER_ID = int(os.environ.get("OWNER_ID", "0"))
 if not BOT_TOKEN or not YOUTUBE_API_KEY or not OWNER_ID:
     raise RuntimeError("Missing required environment variables")
 
-# =====================
-# BOT STATE
-# =====================
+# =============================
+# BOT STATE & FONG SETTINGS
+# =============================
 BOT_ENABLED = True
+CURRENT_FONT ='banner' # THE default starting font
 
 # =====================
 # CACHE
@@ -68,6 +53,15 @@ TEXT = {
 
 def t(lang, key):
     return TEXT.get(lang, TEXT["en"]).get(key, TEXT["en"][key])
+
+def fraktur(text: str) -> str:
+    global CURRENT_FONT
+    try:
+        # Use the current global font setting
+        return pyfiglet.figlet_format(text, font=CURRENT_FONT)
+    except pyfiglet.FontNotFound:
+        # Fallback to a default font if the specified one isn't found
+        return pyfiglet.figlet_format(text, font='standard')
 
 # =====================
 # INLINE SEARCH
@@ -175,6 +169,27 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
+# NEW COMMAND TO SET FONT DYNAMICALLY
+async def set_font(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    global OWNER_ID, CURRENT_FONT
+
+    if update.effective_user.id != OWNER_ID:
+        return
+
+    if not context.args:
+        await update.message.reply_text(f"Please provide a font name. Current font: **{CURRENT_FONT}**", parse_mode="Markdown")
+        return
+
+    new_font = context.args[0].lower() # Get the font name argument
+    
+    try:
+        # Check if the font is valid before changing
+        pyfiglet.figlet_format("Test", font=new_font) 
+        CURRENT_FONT = new_font
+        await update.message.reply_text(f"Font successfully changed to: **{new_font}**", parse_mode="Markdown")
+    except pyfiglet.FontNotFound:
+        await update.message.reply_text(f"Sorry, the font '**{new_font}**' was not found.", parse_mode="Markdown")
+
 # =====================
 # MAIN
 # =====================
@@ -186,6 +201,7 @@ def main():
     app.add_handler(CommandHandler("stop", stop_bot))
     app.add_handler(CommandHandler("status", status_bot))
     app.add_handler(CommandHandler("help", help_command))
+    app.add_handler(CommandHandler("setfont", set_font))
 
     print("🤖 OpsXMusic running")
     app.run_polling()

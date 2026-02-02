@@ -146,31 +146,38 @@ await update.inline_query.answer(results, cache_time=300)
 # =====================
 async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global BOT_ENABLED
-    if update.effective_user.id == OWNER_ID:
-        BOT_ENABLED = False
-        await update.message.reply_text("⛔ Opsxmusic stopped")
+    if update.effective_user.id != OWNER_ID:
+        return
+    BOT_ENABLED = False
+    await update.message.reply_text("⛔ Opsxmusic stopped")
+
 
 async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global BOT_ENABLED
-    if update.effective_user.id == OWNER_ID:
-        BOT_ENABLED = True
-        await update.message.reply_text("✅ Opsxmusic started")
+    if update.effective_user.id != OWNER_ID:
+        return
+    BOT_ENABLED = True
+    await update.message.reply_text("✅ Opsxmusic started")
+
 
 async def status_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if update.effective_user.id == OWNER_ID:
+    if update.effective_user.id != OWNER_ID:
         return
+
     status = "Running ✅" if BOT_ENABLED else "OFFLINE 📵"
-        await update.message.reply_text(f"🎚️ Opsxmusic Status: {status}")
+    await update.message.reply_text(f"🎚️ Opsxmusic Status: {status}")
+
 
 async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "♫*OpsXMusic Bot Help*\n\n"
+        "♫ *OpsXMusic Bot Help*\n\n"
         "*Search music anywhere:*\n"
         "`@opsxmusicbot song name`\n\n"
-        "> *Play* opens the song on YouTube\n"
-        "*YouTube Music* opens in YouTube Music\n\n"
+        "▶ *Play* → YouTube\n"
+        "🎧 *YouTube Music*\n"
+        "🟢 *Spotify*\n\n"
         "⚡ Fast • Clean • Global inline search\n\n"
-        "💡 Tip: You don't need to start the bot to use inline search.",
+        "💡 Tip: You don’t need /start to use inline search.",
         parse_mode="Markdown"
     )
 

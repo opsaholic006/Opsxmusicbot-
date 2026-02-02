@@ -116,8 +116,8 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
         sp = f"https://open.spotify.com/search/{title}"
 
         keyboard = InlineKeyboardMarkup([
-            [InlineKeyboardButton(fraktur("▶Play on YouTube", url=yt)],
-            [InlineKeyboardButton(fraktur("🎧 YouTube Music", url=ytm)],
+            [InlineKeyboardButton(fraktur("▶Play on YouTube"), url=yt)],
+            [InlineKeyboardButton(fraktur("🎧 YouTube Music"), url=ytm)],
             [InlineKeyboardButton("🟢 Spotify", url=sp)],
         ])
 

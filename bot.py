@@ -2,7 +2,6 @@ import os
 import uuid
 import aiohttp
 import time
-import pyfiglet
 from telegram import (
     InlineKeyboardButton,
     InlineKeyboardMarkup,
@@ -18,57 +17,55 @@ from telegram.ext import (
 )
 
 # =====================
-# ENVIRONMENT VARIABLES
+# CONFIGURATION
 # =====================
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "").strip()
 YOUTUBE_API_KEY = os.environ.get("YOUTUBE_API_KEY")
 OWNER_ID = int(os.environ.get("OWNER_ID", "0"))
 
-if not BOT_TOKEN or not YOUTUBE_API_KEY:
-    raise RuntimeError("Missing required environment variables: BOT_TOKEN or YOUTUBE_API_KEY")
-
-# =============================
-# BOT STATE & FONT SETTINGS
-# =============================
+# State
 BOT_ENABLED = True
-CURRENT_FONT = 'banner' 
+CURRENT_FONT = 'small'  # Default to "Small Caps" (ɴᴏᴡ ᴘʟᴀʏ)
 CACHE = {}
 CACHE_TTL = 300 
 
-TEXT = {
-    "en": {"now_playing": "Now playing", "by": "by"},
-    "hi": {"now_playing": "अब चल रहा है", "by": "द्वारा"},
-    "es": {"now_playing": "Reproduciendo", "by": "por"},
+# =====================
+# FONT MAPPING (Unicode)
+# =====================
+FONT_MAPS = {
+    # ɴᴏᴡ ᴘʟᴀʏ Style (Small Caps)
+    "small": "ᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘǫʀsᴛᴜᴠᴡxʏᴢᴀʙᴄᴅᴇꜰɢʜɪᴊᴋʟᴍɴᴏᴘǫʀsᴛᴜᴠᴡxʏᴢ",
+    
+    # 𝓒𝓾𝓻𝓼𝓲𝓿𝓮 Style (Bold Cursive)
+    "cursive": "𝓪𝓫𝓬𝓭𝓮𝓯𝓰𝓱𝓲𝓳𝓴𝓵𝓶𝓷𝓸𝓹𝓺𝓻𝓼𝓽𝓾𝓿𝔀𝔁𝔂𝔃𝓐𝓑𝓒𝓓𝓔𝓕𝓖𝓗𝓘𝓙𝓚𝓛𝓜𝓝𝓞𝓟𝓠𝓡𝓢𝓣𝓤𝓥𝓦𝓧𝓨𝓩",
+    
+    # 𝐛𝐨𝐥𝐝 Style (Sans-Serif Bold)
+    "bold": "𝐚𝐛𝐜𝐝𝐞𝐟𝐠𝐡𝐢𝐣𝐤𝐥𝐦𝐧𝐨𝐩𝐪𝐫𝐬𝐭𝐮𝐯𝐰𝐱𝐲𝐳𝐀𝐁𝐂𝐃𝐄𝐅𝐆𝐇𝐈𝐉𝐊𝐋𝐌𝐍𝐎𝐏𝐐𝐑𝐒𝐓𝐔𝐕𝐖𝐗𝐘𝐙",
+    
+    # Standard mapping
+    "normal": "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ"
 }
 
-# =====================
-# HELPERS
-# =====================
-def t(lang, key):
-    return TEXT.get(lang, TEXT["en"]).get(key, TEXT["en"][key])
-
-def fraktur(text: str) -> str:
+def apply_style(text: str) -> str:
     global CURRENT_FONT
-    try:
-        return pyfiglet.figlet_format(text, font=CURRENT_FONT)
-    except Exception:
-        return text  # Fallback to plain text if figlet fails (important for stability)
+    if CURRENT_FONT not in FONT_MAPS or CURRENT_FONT == "normal":
+        return text
+    
+    normal_chars = FONT_MAPS["normal"]
+    styled_chars = FONT_MAPS[CURRENT_FONT]
+    trans_table = str.maketrans(normal_chars, styled_chars)
+    return text.translate(trans_table)
 
 # =====================
-# INLINE SEARCH (FIXED)
+# INLINE SEARCH
 # =====================
 async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    if not BOT_ENABLED:
-        return
+    if not BOT_ENABLED: return
 
     query = update.inline_query.query.strip()
-    if not query:
-        return
+    if not query: return
 
-    lang = update.inline_query.from_user.language_code or "en"
     now = time.time()
-
-    # ---- CACHE CHECK ----
     if query in CACHE:
         results, ts = CACHE[query]
         if now - ts < CACHE_TTL:
@@ -77,32 +74,25 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     url = "https://www.googleapis.com/youtube/v3/search"
     params = {
-        "part": "snippet",
-        "q": query,
-        "type": "video",
-        "maxResults": 5,
-        "key": YOUTUBE_API_KEY,
+        "part": "snippet", "q": query, "type": "video",
+        "maxResults": 5, "key": YOUTUBE_API_KEY,
     }
 
     results = []
-
     try:
         async with aiohttp.ClientSession() as session:
             async with session.get(url, params=params, timeout=10) as resp:
-                if resp.status != 200:
-                    return # Log error here if needed
                 data = await resp.json()
 
         for item in data.get("items", []):
-            video_id = item["id"]["videoId"]
+            vid = item["id"]["videoId"]
             title = item["snippet"]["title"]
-            channel = item["snippet"]["channelTitle"]
+            chan = item["snippet"]["channelTitle"]
             thumb = item["snippet"]["thumbnails"]["medium"]["url"]
 
-            yt = f"https://www.youtube.com/watch?v={video_id}"
-            ytm = f"https://music.youtube.com/watch?v={video_id}"
+            yt = f"https://www.youtube.com/watch?v={vid}"
+            ytm = f"https://music.youtube.com/watch?v={vid}"
 
-            # Formatting buttons
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("▶ Play on YouTube", url=yt)],
                 [InlineKeyboardButton("🎧 YouTube Music", url=ytm)],
@@ -111,84 +101,59 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
             results.append(
                 InlineQueryResultArticle(
                     id=str(uuid.uuid4()),
-                    title=f"🎼 {title}",
-                    description=f"🙍🏻‍♀️ {channel}",
+                    title=apply_style(f"🎼 {title}"),
+                    description=apply_style(f"🙍🏻‍♀️ {chan}"),
                     thumbnail_url=thumb,
                     input_message_content=InputTextMessageContent(
-                        f"🎧 *{t(lang, 'now_playing')}*\n\n"
-                        f"🎼 *{title}*\n"
-                        f"🙍🏻‍♀️ {t(lang,'by')} {channel}",
+                        apply_style(f"🎧 Now playing\n🎼 {title}\n🙍🏻‍♀️ by {chan}"),
                         parse_mode="Markdown",
                     ),
                     reply_markup=keyboard,
                 )
             )
-
         CACHE[query] = (results, now)
         await update.inline_query.answer(results, cache_time=300)
-        
     except Exception as e:
-        print(f"Search Error: {e}")
+        print(f"Error: {e}")
 
 # =====================
-# COMMAND HANDLERS
+# COMMANDS
 # =====================
-async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global BOT_ENABLED
-    if update.effective_user.id == OWNER_ID:
-        BOT_ENABLED = True
-        await update.message.reply_text("✅ Opsxmusic started")
-
-async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    global BOT_ENABLED
-    if update.effective_user.id == OWNER_ID:
-        BOT_ENABLED = False
-        await update.message.reply_text("⛔ Opsxmusic stopped")
-
-async def status_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    status = "Running ✅" if BOT_ENABLED else "OFFLINE 📵"
-    await update.message.reply_text(f"🎚️ Opsxmusic Status: {status}")
-
-async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "♫ *OpsXMusic Bot Help*\n\n"
-        "Search music by typing in any chat:\n"
-        "`@your_bot_username song name`\n\n"
-        "⚡ Fast • Clean • Global search",
-        parse_mode="Markdown"
-    )
-
 async def set_font(update: Update, context: ContextTypes.DEFAULT_TYPE):
     global CURRENT_FONT
     if update.effective_user.id != OWNER_ID: return
     
     if not context.args:
-        await update.message.reply_text(f"Current font: `{CURRENT_FONT}`")
+        fonts = ", ".join([f"`{f}`" for f in FONT_MAPS.keys()])
+        await update.message.reply_text(f"Current: `{CURRENT_FONT}`\nAvailable: {fonts}")
         return
 
-    new_font = context.args[0].lower()
-    try:
-        pyfiglet.figlet_format("Test", font=new_font)
-        CURRENT_FONT = new_font
-        await update.message.reply_text(f"Font set to: `{new_font}`")
-    except Exception:
-        await update.message.reply_text("Font not found.")
+    f_choice = context.args[0].lower()
+    if f_choice in FONT_MAPS:
+        CURRENT_FONT = f_choice
+        await update.message.reply_text(apply_style(f"✅ Font set to {f_choice}"))
+    else:
+        await update.message.reply_text("❌ Font not found.")
 
-# =====================
-# MAIN
-# =====================
+async def start_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id == OWNER_ID:
+        global BOT_ENABLED
+        BOT_ENABLED = True
+        await update.message.reply_text("✅ Bot Started")
+
+async def stop_bot(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.effective_user.id == OWNER_ID:
+        global BOT_ENABLED
+        BOT_ENABLED = False
+        await update.message.reply_text("⛔ Bot Stopped")
+
 def main():
     app = Application.builder().token(BOT_TOKEN).build()
-    
-    # Registering handlers
     app.add_handler(CommandHandler("start", start_bot))
     app.add_handler(CommandHandler("stop", stop_bot))
-    app.add_handler(CommandHandler("status", status_bot))
-    app.add_handler(CommandHandler("help", help_command))
     app.add_handler(CommandHandler("setfont", set_font))
     app.add_handler(InlineQueryHandler(inline_search))
-
-    print("🤖 OpsXMusic is online...")
+    print("Bot is running...")
     app.run_polling()
 
 if __name__ == "__main__":

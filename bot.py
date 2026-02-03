@@ -120,28 +120,29 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton(apply_style("🎧 YouTube Music"), url=ytm)],
             ])
 
-            results.append(
-                InlineQueryResultArticle(
-                    id=str(uuid.uuid4()),
-                    title=apply_style(f"🎼 {title}"),
-                    description=apply_style(f"🙍🏻‍♀️ {channel}"),
-                    thumbnail_url=thumb,
-                    input_message_content=InputTextMessageContent(
-                        apply_style(
-                            f"🎧 {t(lang, 'now_playing')}\n"
-                            f"🎼 {title}\n"
-                            f"🙍🏻‍♀️ {t(lang,'by')} {channel}"
-                        ),
-                        parse_mode="Markdown",
-                    ),
-                    reply_markup=keyboard,
+try:
+    results.append(
+        InlineQueryResultArticle(
+            id=str(uuid.uuid4()),
+            title=apply_style(f"🎼 {title}"),
+            description=apply_style(f"🙍🏻‍♀️ {channel}"),
+            thumbnail_url=thumb,
+            input_message_content=InputTextMessageContent(
+                apply_style(
+                    f"🎧 {t(lang, 'now_playing')}\n"
+                    f"🎼 {title}\n"
+                    f"🙍🏻‍♀️ {t(lang,'by')} {channel}"
                 )
-            )
+            ),
+            reply_markup=keyboard,
+        )
+    )
 
-        CACHE[query] = (results, now)
-        await update.inline_query.answer(results, cache_time=300)
-    except Exception:
-        pass
+    CACHE[query] = (results, now)
+    await update.inline_query.answer(results, cache_time=300)
+
+except Exception as e:
+    print("❌ Inline error:", e)
 
 # # # # # # # # # # # # # # # # # #
 # OWNER COMMANDS

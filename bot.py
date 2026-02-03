@@ -120,29 +120,69 @@ async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 [InlineKeyboardButton(apply_style("🎧 YouTube Music"), url=ytm)],
             ])
 
-try:
-    results.append(
-        InlineQueryResultArticle(
-            id=str(uuid.uuid4()),
-            title=apply_style(f"🎼 {title}"),
-            description=apply_style(f"🙍🏻‍♀️ {channel}"),
-            thumbnail_url=thumb,
-            input_message_content=InputTextMessageContent(
-                apply_style(
-                    f"🎧 {t(lang, 'now_playing')}\n"
-                    f"🎼 {title}\n"
-                    f"🙍🏻‍♀️ {t(lang,'by')} {channel}"
+async def inline_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    try:
+        if not BOT_ENABLED:
+            return
+
+        query = update.inline_query.query.strip()
+        if not query:
+            return
+
+        lang = update.inline_query.from_user.language_code or "en"
+        now = time.time()
+
+        url = "https://www.googleapis.com/youtube/v3/search"
+        params = {
+            "part": "snippet",
+            "q": query,
+            "type": "video",
+            "maxResults": 5,
+            "key": YOUTUBE_API_KEY,
+        }
+
+        results = []
+
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url, params=params, timeout=5) as resp:
+                data = await resp.json()
+
+        for item in data.get("items", []):
+            video_id = item["id"]["videoId"]
+            title = item["snippet"]["title"]
+            channel = item["snippet"]["channelTitle"]
+            thumb = item["snippet"]["thumbnails"]["medium"]["url"]
+
+            yt = f"https://www.youtube.com/watch?v={video_id}"
+            ytm = f"https://music.youtube.com/watch?v={video_id}"
+
+            keyboard = InlineKeyboardMarkup([
+                [InlineKeyboardButton(apply_style("▶ Play on YouTube"), url=yt)],
+                [InlineKeyboardButton(apply_style("🎧 YouTube Music"), url=ytm)],
+            ])
+
+            results.append(
+                InlineQueryResultArticle(
+                    id=str(uuid.uuid4()),
+                    title=apply_style(f"🎼 {title}"),
+                    description=apply_style(f"🙍🏻‍♀️ {channel}"),
+                    thumbnail_url=thumb,
+                    input_message_content=InputTextMessageContent(
+                        apply_style(
+                            f"🎧 {t(lang,'now_playing')}\n"
+                            f"🎼 {title}\n"
+                            f"🙍🏻‍♀️ {t(lang,'by')} {channel}"
+                        )
+                    ),
+                    reply_markup=keyboard,
                 )
-            ),
-            reply_markup=keyboard,
-        )
-    )
+            )
 
-    CACHE[query] = (results, now)
-    await update.inline_query.answer(results, cache_time=300)
+        CACHE[query] = (results, now)
+        await update.inline_query.answer(results, cache_time=300)
 
-except Exception as e:
-    print("❌ Inline error:", e)
+    except Exception as e:
+        print("❌ Inline handler crashed:", e)
 
 # # # # # # # # # # # # # # # # # #
 # OWNER COMMANDS
